@@ -34,6 +34,9 @@ let rec token ({SedlexMenhir.stream; _} as lexbuf) =
         | "fun" -> FUN
         | "val" -> VAL
         | "do" -> DO
+        | "let" -> LET
+        | "in" -> IN
+        | "end" -> END
         | cs -> ID cs)
 
     | _ -> L.raise_ParseError lexbuf

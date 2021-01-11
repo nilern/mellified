@@ -1,3 +1,5 @@
+module Vec = CCImmutArray
+
 type span = Util.span
 
 module type EXPR = sig
@@ -9,11 +11,18 @@ module type EXPR = sig
         val to_doc : t -> PPrint.document
     end
 
-    type t =
+    type t = private
         | Fn of span * Pat.t * t
         | App of span * t * t
+        | Let of span * stmt Vec.t * t
         | Var of span * Name.t
         | Const of span * Const.t
+
+    val fn : span -> Pat.t -> t -> t
+    val app : span -> t -> t -> t
+    val let' : span -> stmt Vec.t -> t -> t
+    val var : span -> Name.t -> t
+    val const : span -> Const.t -> t
 
     val span : t -> span
 

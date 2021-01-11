@@ -1,3 +1,5 @@
+module Vec = CCImmutArray
+
 module S = AstSigs
 type span = Util.span
 
@@ -13,12 +15,24 @@ module Make (Stmt : S.STMT) = struct
     type t =
         | Fn of span * Pat.t * t
         | App of span * t * t
+        | Let of span * stmt Vec.t * t
         | Var of span * Name.t
         | Const of span * Const.t
+
+    let fn span param body = Fn (span, param, body)
+    let app span callee arg = App (span, callee, arg)
+
+    let let' span stmts body = match Vec.length stmts with
+        | 0 -> body
+        | _ -> Let (span, stmts, body)
+
+    let var span name = Var (span, name)
+    let const span c = Const (span, c)
 
     let span = function
         | Fn (span, _, _)
         | App (span, _, _)
+        | Let (span, _, _)
         | Var (span, _)
         | Const (span, _) -> span
 
@@ -37,6 +51,12 @@ module Make (Stmt : S.STMT) = struct
         | App (_, callee, arg) -> prefix 4 1 (to_doc_prec app_prec callee)
                 (to_doc_prec (app_prec + 1) arg)
             |> prec_parens (prec > app_prec)
+        | Let (_, stmts, body) -> surround 4 1
+            (surround 4 1 (string "let")
+                (separate_map (break 1) Stmt.to_doc (Vec.to_list stmts))
+                (string "in"))
+            (to_doc_prec 0 body)
+            (string "end")
         | Var (_, name) -> Name.to_doc name
         | Const (_, c) -> Const.to_doc c
 

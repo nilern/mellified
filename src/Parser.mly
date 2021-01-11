@@ -2,7 +2,7 @@
 open Ast
 %}
 
-%token FUN "fun" DARROW "=>" LPAREN "(" RPAREN ")"
+%token FUN "fun" DARROW "=>" LET "let" IN "in" END "end" LPAREN "(" RPAREN ")"
     VAL "val" DO "do" EQ "="
     EOF
 %token <string> ID STRING
@@ -26,20 +26,21 @@ pat : ID { ($loc, Name.of_string $1) }
 (* # Expressions *)
 
 expr :
-    | "fun" pat "=>" expr { Fn ($loc, $2, $4) }
+    | "fun" pat "=>" expr { Expr.fn $loc $2 $4 }
     | app { $1 }
 
 app :
-    | app nestable { App ($loc, $1, $2) }
+    | app nestable { Expr.app $loc $1 $2 }
     | nestable { $1 }
 
 nestable :
+    | "let" stmt+ "in" expr "end" { Expr.let' $loc (CCImmutArray.of_list $2) $4 }
     | "(" expr ")" { $2 }
     | atom { $1 }
 
 atom :
-    | ID { Var ($loc, Name.of_string $1) }
-    | const { Expr.Const ($loc, $1) }
+    | ID { Expr.var $loc (Name.of_string $1) }
+    | const { Expr.const $loc $1 }
 
 const :
     | STRING { String $1 }
