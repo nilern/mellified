@@ -1,0 +1,10 @@
+opam-version: "2.0"
+
+name: "mellified"
+version: "0.1.0"
+synopsis: "Trying to grok MLF by doing"
+
+maintainer: "pauli.jaakkola@iki.fi"
+
+depends: ["ocaml" "cmdliner" "linenoise"]
+

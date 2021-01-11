@@ -1,0 +1,5 @@
+(executable
+ (name mellified)
+ (libraries cmdliner linenoise)
+ (link_flags -ccopt -Wl,-z,relro,-z,now))
+
