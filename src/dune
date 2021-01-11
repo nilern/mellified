@@ -1,5 +1,10 @@
 (executable
- (name mellified)
- (libraries cmdliner linenoise)
- (link_flags -ccopt -Wl,-z,relro,-z,now))
+  (name mellified)
+  (libraries containers containers-data
+    menhirLib pprint
+    cmdliner linenoise)
+  (preprocess (pps sedlex.ppx))
+  (link_flags -ccopt -Wl,-z,relro,-z,now))
+
+(menhir (modules Parser))
 

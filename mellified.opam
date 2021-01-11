@@ -6,5 +6,7 @@ synopsis: "Trying to grok MLF by doing"
 
 maintainer: "pauli.jaakkola@iki.fi"
 
-depends: ["ocaml" "cmdliner" "linenoise"]
+depends: ["ocaml" "containers" "containers-data"
+    "menhir" "sedlex" "pprint"
+    "cmdliner" "linenoise"]
 
