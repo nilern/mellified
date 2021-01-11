@@ -19,16 +19,22 @@ let rec token ({SedlexMenhir.stream; _} as lexbuf) =
     | eof -> L.update lexbuf; Parser.EOF
 
     | '='  -> L.update lexbuf; EQ
-
-    | "val" -> L.update lexbuf; VAL
-    | "do" -> L.update lexbuf; DO
+    | "=>"  -> L.update lexbuf; DARROW
+    | '(' -> L.update lexbuf; LPAREN
+    | ')' -> L.update lexbuf; RPAREN
 
     | string ->
         let tok = L.lexeme lexbuf in
         L.update lexbuf; STRING (String.sub tok 1 (String.length tok - 2))
     | integer -> L.update lexbuf; INT (int_of_string (L.lexeme lexbuf))
 
-    | identifier -> L.update lexbuf; ID (L.lexeme lexbuf)
+    | identifier ->
+        L.update lexbuf;
+        (match L.lexeme lexbuf with
+        | "fun" -> FUN
+        | "val" -> VAL
+        | "do" -> DO
+        | cs -> ID cs)
 
     | _ -> L.raise_ParseError lexbuf
 

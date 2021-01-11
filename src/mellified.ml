@@ -1,3 +1,8 @@
+module Vec = CCImmutArray
+let (%) = CCFun.(%)
+
+let pprint = Util.pprint
+
 let prompt = "mellified> "
 
 let rec repl () =
@@ -5,11 +10,10 @@ let rec repl () =
     | Some input ->
         (try begin
             ignore (LNoise.history_add input);
-            print_endline input;
             let lexbuf = Sedlexing.Utf8.from_string input
                 |> SedlexMenhir.create_lexbuf "REPL input" in
-            let _ = SedlexMenhir.sedlex_with_menhir Lexer.token Parser.stmts lexbuf in
-            ()
+            let stmts = SedlexMenhir.sedlex_with_menhir Lexer.token Parser.stmts lexbuf in
+            Vec.iter (Util.pprint % Ast.Stmt.to_doc) stmts
         end with SedlexMenhir.ParseError err ->
             print_endline @@ SedlexMenhir.string_of_ParseError err);
         repl ()
