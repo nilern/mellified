@@ -1,6 +1,8 @@
 module Vec = CCImmutArray
 let (%) = CCFun.(%)
 
+module T = Type
+
 let pprint = Util.pprint
 
 let prompt = "mellified> "

@@ -4,8 +4,10 @@ open Ast
 
 %token FUN "fun" DARROW "=>" LET "let" IN "in" END "end" LPAREN "(" RPAREN ")"
     VAL "val" DO "do" EQ "="
+    COLON ":" FORALL "forall" DOT "." GT ">=" ARROW "->"
+    WILD "_"
     EOF
-%token <string> ID STRING
+%token <string> ID PRIM STRING
 %token <int> INT
 
 %start stmts
@@ -21,7 +23,9 @@ stmt :
     | "val" pat "=" expr { Val ($loc, $2, $4) }
     | "do" expr { Do ($loc, $2) }
 
-pat : ID { ($loc, Name.of_string $1) }
+pat : ID ann? { ($loc, Name.of_string $1, $2) }
+
+ann : ":" typ { $2 }
 
 (* # Expressions *)
 
@@ -45,4 +49,33 @@ atom :
 const :
     | STRING { String $1 }
     | INT { Const.Int $1 }
+
+(* # Types *)
+
+typ : styp { Type.of_syn $1 }
+
+styp : 
+    | "forall" ID bound "." styp { SynForAll (Name.of_string $2, fst $3, snd $3, $5) }
+    | tbody { $1 }
+
+tbody :
+    | tnestable "->" tbody { SynArrow {domain = $1; codomain = $3} }
+    | tnestable { $1 }
+
+tnestable :
+    | "(" styp ")" { $2 }
+    | tatom { $1 }
+
+tatom :
+    | ID { SynVar (Name.of_string $1) }
+    | "_" { SynWild }
+    | PRIM { SynPrim (Prim.of_string $1 |> Option.get) } (* FIXME *)
+
+bound :
+    | flag styp { ($1, $2) }
+    | { (Flex, SynWild) }
+
+flag :
+    | EQ { Rigid }
+    | GT { Type.Flex }
 

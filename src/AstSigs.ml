@@ -6,7 +6,7 @@ module type EXPR = sig
     type stmt
 
     module Pat : sig
-        type t = span * Name.t
+        type t = span * Name.t * Type.t option
 
         val to_doc : t -> PPrint.document
     end

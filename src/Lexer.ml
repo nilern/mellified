@@ -20,6 +20,10 @@ let rec token ({SedlexMenhir.stream; _} as lexbuf) =
 
     | '='  -> L.update lexbuf; EQ
     | "=>"  -> L.update lexbuf; DARROW
+    | ">="  -> L.update lexbuf; GT
+    | ':'  -> L.update lexbuf; COLON
+    | "->"  -> L.update lexbuf; ARROW
+    | '.'  -> L.update lexbuf; DOT
     | '(' -> L.update lexbuf; LPAREN
     | ')' -> L.update lexbuf; RPAREN
 
@@ -28,6 +32,10 @@ let rec token ({SedlexMenhir.stream; _} as lexbuf) =
         L.update lexbuf; STRING (String.sub tok 1 (String.length tok - 2))
     | integer -> L.update lexbuf; INT (int_of_string (L.lexeme lexbuf))
 
+    | "__int" ->
+        let tok = L.lexeme lexbuf in
+        L.update lexbuf; PRIM (String.sub tok 2 (String.length tok - 2))
+    | '_' -> L.update lexbuf; WILD
     | identifier ->
         L.update lexbuf;
         (match L.lexeme lexbuf with
@@ -37,6 +45,7 @@ let rec token ({SedlexMenhir.stream; _} as lexbuf) =
         | "let" -> LET
         | "in" -> IN
         | "end" -> END
+        | "forall" -> FORALL
         | cs -> ID cs)
 
     | _ -> L.raise_ParseError lexbuf

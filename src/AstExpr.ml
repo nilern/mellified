@@ -7,9 +7,13 @@ module Make (Stmt : S.STMT) = struct
     type stmt = Stmt.t
 
     module Pat = struct
-        type t = span * Name.t
+        type t = span * Name.t * Type.t option
 
-        let to_doc (_, name) = Name.to_doc name
+        let to_doc (_, name, ann) =
+            let ndoc = Name.to_doc name in
+            match ann with
+            | Some t -> PPrint.(infix 4 1 colon ndoc (Type.to_doc t))
+            | None -> ndoc
     end
 
     type t =

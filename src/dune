@@ -1,6 +1,6 @@
 (executable
   (name mellified)
-  (libraries containers containers-data
+  (libraries containers containers-data streaming
     menhirLib pprint
     cmdliner linenoise)
   (preprocess (pps sedlex.ppx))
