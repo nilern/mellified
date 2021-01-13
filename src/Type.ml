@@ -4,12 +4,16 @@ let flag_to_string = function
     | Flex -> ">="
     | Rigid -> "="
 
-type t' =
-    | Arrow of {domain : t; codomain : t}
-    | Uv of t option ref
+type gen = {mutable binder : gen option; typs : t CCVector.vector}
+
+and t =
+    | Arrow of {mutable binder : binder; domain : t; codomain : t}
+    | Uv of {mutable binder : binder; mutable v : t option}
     | Prim of Prim.t
 
-and t = {term : t'; mutable binder : t option; mutable flag : flag option}
+and binder =
+    | Gen of flag * gen
+    | Typ of flag * t
 
 type syn =
     | SynForAll of Name.t * flag * syn * syn
@@ -17,6 +21,23 @@ type syn =
     | SynArrow of {domain : syn; codomain : syn}
     | SynWild
     | SynPrim of Prim.t
+
+let binder = function
+    | Arrow {binder; _} | Uv {binder; _} -> Some binder
+    | Prim _ -> None
+
+let bind (t : t) binder = match t with
+    | Arrow arrow -> arrow.binder <- binder
+    | Uv uv -> uv.binder <- binder
+    | Prim _ -> ()
+
+let flag = function
+    | Gen (flag, _) | Typ (flag, _) -> flag
+
+let binder_eq b b' = match (b, b') with
+    | (Gen (flag, gen), Gen (flag', gen')) -> flag = flag' && gen == gen'
+    | (Typ (flag, t), Typ (flag', t')) -> flag = flag' && t == t'
+    | (Gen _, Typ _) | (Typ _, Gen _) -> false
 
 type typ = t
 
@@ -32,39 +53,41 @@ module HashSet = CCHashSet.Make (struct
     let equal = (==)
 end)
 
-let of_syn =
+let of_syn gen syn =
     let module Env = Name.HashMap in
 
-    let rec of_syn env = function
-        | SynForAll (param, flag, bound, body) ->
-            let bound = of_syn env bound in
-            let env = Env.add param bound env in
-            let body = of_syn env body in
-            bound.binder <- Some body;
-            bound.flag <- Some flag;
-            body
-        | SynVar name -> Env.get_exn name env (* FIXME: can raise *)
-        | SynArrow {domain; codomain} ->
-            let domain = of_syn env domain in
-            let codomain = of_syn env codomain in
-            let t = {term = Arrow {domain; codomain}; binder = None; flag = None} in
-            domain.binder <- Some t;
-            domain.flag <- Some Rigid;
-            codomain.binder <- Some t;
-            codomain.flag <- Some Flex;
-            t
-        | SynWild -> {term = Uv (ref None); binder = None; flag = None}
-        | SynPrim p -> {term = Prim p; binder = None; flag = None} in
-    of_syn Env.empty
+    let rec of' env binder syn =
+        let t = match syn with
+            | SynForAll (param, flag, bound, body) ->
+                let bound = of' env binder bound in
+                let env = Env.add param bound env in
+                let body = of' env binder body in
+                if bound != body then bind bound (Typ (flag, body));
+                body
+            | SynVar name -> Env.get_exn name env (* FIXME: can raise *)
+            | SynArrow {domain; codomain} ->
+                let domain = of' env binder domain in
+                let codomain = of' env binder codomain in
+                let t = Arrow {binder; domain; codomain} in
+                bind domain (Typ (Rigid, t));
+                bind codomain (Typ (Flex, t));
+                t
+            | SynWild -> Uv {binder; v = None}
+            | SynPrim p -> Prim p in
+        t in
+
+    let t = of' Env.empty (Gen (Flex, gen)) syn in
+    CCVector.push gen.typs t;
+    t
 
 let analyze t =
     let bindees = Hashtbl.create 0 in
-    let add_bindee t = match t.binder with
-        | Some binder -> 
+    let add_bindee (t : t) = match binder t with
+        | Some (Typ (_, binder)) ->
             Hashtbl.update bindees ~k: binder ~f: (fun _ -> function
                 | Some ts -> Some (t :: ts)
                 | None -> Some [t])
-        | None -> () in
+        | Some (Gen _) | None -> () in
 
     let inlineabilities = Hashtbl.create 0 in
     let add_inlineability t b' =
@@ -74,33 +97,28 @@ let analyze t =
 
     let visited = HashSet.create 0 in
 
-    let rec analyze opt_parent expected_flag t =
+    let rec analyze parent t =
         if HashSet.mem visited t
         then add_inlineability t false
         else begin
             HashSet.insert visited t;
-            (match t.term with
-            | Arrow {domain; codomain} ->
-                analyze (Some t) (Some Rigid) domain;
-                analyze (Some t) (Some Flex) codomain;
+            (match t with
+            | Arrow {binder = _; domain; codomain} ->
+                analyze (Typ (Rigid, t)) domain;
+                analyze (Typ (Flex, t)) codomain;
                 add_bindee t;
-            | Uv uv -> (match !uv with
-                | Some t' -> analyze opt_parent expected_flag t'
+            | Uv {binder = _; v} -> (match v with
+                | Some term -> analyze parent term
                 | None -> add_bindee t);
             | Prim _ -> ());
-            (match opt_parent with
-            | Some parent ->
-                (match t.term with
-                | Arrow _ | Uv _ ->
-                    (match t.binder with
-                    | Some binder -> binder == parent && t.flag = expected_flag
-                    | None -> false)
-                | Prim _ -> true)
-            | None -> false)
+            (match binder t with
+            | Some binder -> binder_eq binder parent
+            | None -> true)
             |> add_inlineability t
         end in
 
-    analyze None None t;
+    let tmp = {binder = None; typs = CCVector.create ()} in
+    analyze (Gen (Flex, tmp)) t;
     (bindees, inlineabilities)
 
 let to_doc t =
@@ -123,17 +141,18 @@ let to_doc t =
                 let bdoc = to_doc bindee in
                 let name = fresh_qname bindee in
                 let q = string "forall" ^^ blank 1
-                    ^^ infix 4 1 (string (flag_to_string (Option.get bindee.flag)))
+                    ^^ infix 4 1 (string (flag_to_string
+                            (bindee |> binder |> Option.get |> flag)))
                         name bdoc in
                 Some (match acc with
                 | Some acc -> (prefix 4 1 acc (dot ^^ blank 1 ^^ q))
                 | None -> q)
             end
         ) bindees None in
-        let body = match t.term with
-            | Arrow {domain; codomain} ->
+        let body = match t with
+            | Arrow {binder = _; domain; codomain} ->
                 infix 4 1 (string "->") (child_to_doc domain) (child_to_doc codomain)
-            | Uv uv -> (match !uv with
+            | Uv {binder = _; v} -> (match v with
                 | Some t -> to_doc t
                 | None -> Hashtbl.get vne t |> Option.value ~default: (string "_"))
             | Prim p -> string "__" ^^ Prim.to_doc p in

@@ -1,11 +1,15 @@
 type flag = Flex | Rigid
 
-type t' =
-    | Arrow of {domain : t; codomain : t}
-    | Uv of t option ref
+type gen = {mutable binder : gen option; typs : t CCVector.vector}
+
+and t =
+    | Arrow of {mutable binder : binder; domain : t; codomain : t}
+    | Uv of {mutable binder : binder; mutable v : t option}
     | Prim of Prim.t
 
-and t = {term : t'; mutable binder : t option; mutable flag : flag option}
+and binder =
+    | Gen of flag * gen
+    | Typ of flag * t
 
 type syn =
     | SynForAll of Name.t * flag * syn * syn
@@ -14,7 +18,7 @@ type syn =
     | SynWild
     | SynPrim of Prim.t
 
-val of_syn : syn -> t
+val of_syn : gen -> syn -> t
 
 val to_doc : t -> PPrint.document
 

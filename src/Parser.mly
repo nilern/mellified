@@ -52,7 +52,7 @@ const :
 
 (* # Types *)
 
-typ : styp { Type.of_syn $1 }
+typ : styp { Type.of_syn (* HACK: *) {binder = None; typs = CCVector.create ()} $1 }
 
 styp : 
     | "forall" ID bound "." styp { SynForAll (Name.of_string $2, fst $3, snd $3, $5) }
