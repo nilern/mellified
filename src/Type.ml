@@ -22,6 +22,12 @@ type syn =
     | SynWild
     | SynPrim of Prim.t
 
+let level parent = {binder = Some parent; typs = CCVector.create ()}
+
+let uv gen = Uv {binder = Gen (Flex, gen); v = None}
+let arrow gen domain codomain = Arrow {binder = Gen (Flex, gen); domain; codomain}
+let prim p = Prim p
+
 let binder = function
     | Arrow {binder; _} | Uv {binder; _} -> Some binder
     | Prim _ -> None

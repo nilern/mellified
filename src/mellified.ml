@@ -15,7 +15,9 @@ let rec repl () =
             let lexbuf = Sedlexing.Utf8.from_string input
                 |> SedlexMenhir.create_lexbuf "REPL input" in
             let stmts = SedlexMenhir.sedlex_with_menhir Lexer.token Parser.stmts lexbuf in
-            Vec.iter (Util.pprint % Ast.Stmt.to_doc) stmts
+            Vec.iter (Util.pprint % Ast.Stmt.to_doc) stmts;
+            let _ = Constrain.constrain stmts in
+            ()
         end with SedlexMenhir.ParseError err ->
             print_endline @@ SedlexMenhir.string_of_ParseError err);
         repl ()
