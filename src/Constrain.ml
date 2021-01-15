@@ -29,25 +29,18 @@ let constrain stmts =
         | Var (_, name) -> (match Env.get_exn name env with (* FIXME: can raise *)
             | Let (vgen, vt) ->
                 let t = Type.uv gen in
-                CCVector.push gen.typs t;
-
                 Constraint.instantiate constr vgen vt t;
-
                 t
 
             | Param vt ->
                 let t = Type.uv gen in
-                CCVector.push gen.typs t;
-
                 Constraint.unify constr vt t;
-
                 t)
 
         | Fn (_, (_, name, (* FIXME: use ann: *) _), body) ->
             let domain = Type.uv gen in
             let codomain = Type.uv gen in
             let t = Type.arrow gen domain codomain in
-            CCVector.push gen.typs t;
 
             let bgen = Type.level gen in
             let env = Env.add name (Param domain) env in
@@ -60,7 +53,6 @@ let constrain stmts =
             let domain = Type.uv gen in
             let codomain = Type.uv gen in
             let t = Type.arrow gen domain codomain in
-            CCVector.push gen.typs codomain;
 
             let cgen = Type.level gen in
             let ct = typeof cgen env callee in
@@ -74,8 +66,6 @@ let constrain stmts =
 
         | Const (_, c) ->
             let t = Type.prim (const_type c) in
-            CCVector.push gen.typs t;
-
             t
 
     and constrain_stmt (gen, env) : Stmt.t -> Type.gen * Env.t = function
@@ -89,7 +79,7 @@ let constrain stmts =
             ignore (typeof gen env expr);
             (gen, env) in
 
-    let gen : Type.gen = {binder = None; typs = CCVector.create ()} in
+    let gen : Type.gen = Top in
     let _ = Vec.fold constrain_stmt (gen, Env.empty) stmts in
     constr
 

@@ -1,6 +1,8 @@
 type flag = Flex | Rigid
 
-type gen = {mutable binder : gen option; typs : t CCVector.vector}
+type gen =
+    | Local of gen
+    | Top
 
 and t = private
     | Arrow of {mutable binder : binder; domain : t; codomain : t}

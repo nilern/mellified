@@ -4,7 +4,9 @@ let flag_to_string = function
     | Flex -> ">="
     | Rigid -> "="
 
-type gen = {mutable binder : gen option; typs : t CCVector.vector}
+type gen =
+    | Local of gen
+    | Top
 
 and t =
     | Arrow of {mutable binder : binder; domain : t; codomain : t}
@@ -22,7 +24,7 @@ type syn =
     | SynWild
     | SynPrim of Prim.t
 
-let level parent = {binder = Some parent; typs = CCVector.create ()}
+let level parent = Local parent
 
 let uv gen = Uv {binder = Gen (Flex, gen); v = None}
 let arrow gen domain codomain = Arrow {binder = Gen (Flex, gen); domain; codomain}
@@ -83,7 +85,6 @@ let of_syn gen syn =
         t in
 
     let t = of' Env.empty (Gen (Flex, gen)) syn in
-    CCVector.push gen.typs t;
     t
 
 let analyze t =
@@ -123,7 +124,7 @@ let analyze t =
             |> add_inlineability t
         end in
 
-    let tmp = {binder = None; typs = CCVector.create ()} in
+    let tmp = Top in
     analyze (Gen (Flex, tmp)) t;
     (bindees, inlineabilities)
 
