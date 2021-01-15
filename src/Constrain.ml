@@ -28,15 +28,15 @@ let constrain stmts =
             let (gen, env) = Vec.fold constrain_stmt (gen, env) stmts in
             typeof gen env body
 
-        | Var (_, name) -> (match Env.get_exn name env with (* FIXME: can raise *)
+        | Var (span, name) -> (match Env.get_exn name env with (* FIXME: can raise *)
             | Let (vgen, vt) ->
                 let t = Type.uv gen in
-                instantiate constr vgen vt t;
+                instantiate constr span vgen vt t;
                 t
 
             | Param vt ->
                 let t = Type.uv gen in
-                unify constr vt t;
+                unify constr span vt t;
                 t)
 
         | Fn (_, (_, name, (* FIXME: use ann: *) _), body) ->
@@ -47,7 +47,7 @@ let constrain stmts =
             let bgen = Type.level gen in
             let env = Env.add name (Param domain) env in
             let bt = typeof bgen env body in
-            Constraint.instantiate constr bgen bt codomain;
+            instantiate constr (Expr.span body) bgen bt codomain;
 
             t
 
@@ -58,11 +58,11 @@ let constrain stmts =
 
             let cgen = Type.level gen in
             let ct = typeof cgen env callee in
-            Constraint.instantiate constr cgen ct t;
+            instantiate constr (Expr.span callee) cgen ct t;
 
             let agen = Type.level gen in
             let at = typeof agen env arg in
-            Constraint.instantiate constr agen at domain;
+            instantiate constr (Expr.span arg) agen at domain;
 
             codomain
 
