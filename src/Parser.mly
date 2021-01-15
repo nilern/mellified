@@ -52,30 +52,28 @@ const :
 
 (* # Types *)
 
-typ : styp { Type.of_syn (* HACK: *) Top $1 }
-
-styp : 
-    | "forall" ID bound "." styp { SynForAll (Name.of_string $2, fst $3, snd $3, $5) }
+typ : 
+    | "forall" ID bound "." typ { Type.ForAll ($loc, Name.of_string $2, fst $3, snd $3, $5) }
     | tbody { $1 }
 
 tbody :
-    | tnestable "->" tbody { SynArrow {domain = $1; codomain = $3} }
+    | tnestable "->" tbody { Arrow {span = $loc; domain = $1; codomain = $3} }
     | tnestable { $1 }
 
 tnestable :
-    | "(" styp ")" { $2 }
+    | "(" typ ")" { $2 }
     | tatom { $1 }
 
 tatom :
-    | ID { SynVar (Name.of_string $1) }
-    | "_" { SynWild }
-    | PRIM { SynPrim (Prim.of_string $1 |> Option.get) } (* FIXME *)
+    | ID { Var ($loc, Name.of_string $1) }
+    | "_" { Wild $loc }
+    | PRIM { Prim ($loc, Prim.of_string $1 |> Option.get) } (* FIXME *)
 
 bound :
-    | flag styp { ($1, $2) }
-    | { (Flex, SynWild) }
+    | flag typ { ($1, $2) }
+    | { (Flex, Wild $loc) }
 
 flag :
     | EQ { Rigid }
-    | GT { Type.Flex }
+    | GT { IRUtil.Flex }
 

@@ -1,4 +1,4 @@
-type flag = Flex | Rigid
+type flag = IRUtil.flag
 
 type gen =
     | Local of gen
@@ -21,12 +21,6 @@ val prim : Prim.t -> t
 
 val to_doc : t -> PPrint.document
 
-type syn =
-    | SynForAll of Name.t * flag * syn * syn
-    | SynVar of Name.t
-    | SynArrow of {domain : syn; codomain : syn}
-    | SynWild
-    | SynPrim of Prim.t
-
-val of_syn : gen -> syn -> t
+val of_syn : gen -> Ast.Type.t -> t
+val to_syn : Util.span -> t -> Ast.Type.t
 

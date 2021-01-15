@@ -1,8 +1,4 @@
-type flag = Flex | Rigid
-
-let flag_to_string = function
-    | Flex -> ">="
-    | Rigid -> "="
+type flag = IRUtil.flag
 
 type gen =
     | Local of gen
@@ -16,13 +12,6 @@ and t =
 and binder =
     | Gen of flag * gen
     | Typ of flag * t
-
-type syn =
-    | SynForAll of Name.t * flag * syn * syn
-    | SynVar of Name.t
-    | SynArrow of {domain : syn; codomain : syn}
-    | SynWild
-    | SynPrim of Prim.t
 
 let level parent = Local parent
 
@@ -64,24 +53,24 @@ end)
 let of_syn gen syn =
     let module Env = Name.HashMap in
 
-    let rec of' env binder syn =
+    let rec of' env binder (syn : Ast.Type.t) =
         let t = match syn with
-            | SynForAll (param, flag, bound, body) ->
+            | ForAll (_, param, flag, bound, body) ->
                 let bound = of' env binder bound in
                 let env = Env.add param bound env in
                 let body = of' env binder body in
                 if bound != body then bind bound (Typ (flag, body));
                 body
-            | SynVar name -> Env.get_exn name env (* FIXME: can raise *)
-            | SynArrow {domain; codomain} ->
+            | Var (_, name) -> Env.get_exn name env (* FIXME: can raise *)
+            | Arrow {span = _; domain; codomain} ->
                 let domain = of' env binder domain in
                 let codomain = of' env binder codomain in
                 let t = Arrow {binder; domain; codomain} in
                 bind domain (Typ (Rigid, t));
                 bind codomain (Typ (Flex, t));
                 t
-            | SynWild -> Uv {binder; v = None}
-            | SynPrim p -> Prim p in
+            | Wild _ -> Uv {binder; v = None}
+            | Prim (_, p) -> Prim p in
         t in
 
     let t = of' Env.empty (Gen (Flex, gen)) syn in
@@ -128,49 +117,47 @@ let analyze t =
     analyze (Gen (Flex, tmp)) t;
     (bindees, inlineabilities)
 
-let to_doc t =
-    let open PPrint in
-
+let to_syn span t = 
     let (bindees, inlineabilities) = analyze t in
 
     let vne = Hashtbl.create 0 in
     let fresh_qname t =
-        let doc = Name.to_doc (Name.fresh ()) in
-        Hashtbl.add vne t doc;
-        doc in
+        let name = Name.fresh () in
+        Hashtbl.add vne t (Ast.Type.Var (span, name));
+        name in
 
-    let rec to_doc t =
+    let rec to_syn t =
         let bindees = Hashtbl.get bindees t |> Option.value ~default: [] in
-        let quantification = List.fold_right (fun bindee acc ->
+        let bindees = List.fold_right (fun bindee acc ->
             if Hashtbl.find inlineabilities bindee
             then acc
             else begin
-                let bdoc = to_doc bindee in
+                let bound = to_syn bindee in
+                let flag = bindee |> binder |> Option.get |> flag in
                 let name = fresh_qname bindee in
-                let q = string "forall" ^^ blank 1
-                    ^^ infix 4 1 (string (flag_to_string
-                            (bindee |> binder |> Option.get |> flag)))
-                        name bdoc in
-                Some (match acc with
-                | Some acc -> (prefix 4 1 acc (dot ^^ blank 1 ^^ q))
-                | None -> q)
+                (name, flag, bound) :: acc
             end
-        ) bindees None in
-        let body = match t with
+        ) bindees [] in
+        let body : Ast.Type.t = match t with
             | Arrow {binder = _; domain; codomain} ->
-                infix 4 1 (string "->") (child_to_doc domain) (child_to_doc codomain)
+                Arrow {span; domain = child_to_syn domain; codomain = child_to_syn codomain}
             | Uv {binder = _; v} -> (match v with
-                | Some t -> to_doc t
-                | None -> Hashtbl.get vne t |> Option.value ~default: (string "_"))
-            | Prim p -> string "__" ^^ Prim.to_doc p in
-        match quantification with
-        | Some quantification -> prefix 4 1 quantification (dot ^^ blank 1 ^^ body)
-        | None -> body
+                | Some t -> to_syn t
+                | None -> Hashtbl.get vne t |> Option.value ~default: (Ast.Type.Wild span))
+            | Prim p -> Prim (span, p) in
+        List.fold_left (fun body (name, flag, bound) -> (* fold_left reverses, intentionally *)
+            Ast.Type.ForAll (span, name, flag, bound, body)
+        ) body bindees
 
-    and child_to_doc t =
+    and child_to_syn t =
         if Hashtbl.find inlineabilities t
-        then to_doc t
+        then to_syn t
         else Hashtbl.find vne t in
 
-    to_doc t
+    to_syn t
+
+let to_doc =
+    let shim_pos = Util.start_pos "" in
+    let shim_span = (shim_pos, shim_pos) in
+    fun t -> Ast.Type.to_doc (to_syn shim_span t)
 

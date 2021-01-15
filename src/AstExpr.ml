@@ -2,6 +2,9 @@ module Vec = CCImmutArray
 
 module S = AstSigs
 type span = Util.span
+let prec_parens = Util.prec_parens
+
+module Type = AstType
 
 module Make (Stmt : S.STMT) = struct
     type stmt = Stmt.t
@@ -42,8 +45,6 @@ module Make (Stmt : S.STMT) = struct
 
     let fn_prec = 0
     let app_prec = 1
-
-    let prec_parens wrap doc = if wrap then PPrint.parens doc else doc
 
     let rec to_doc_prec prec =
         let open PPrint in

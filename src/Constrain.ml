@@ -1,7 +1,9 @@
 module Vec = CCImmutArray
 
-open Ast
-module C = Constraint
+module Expr = Ast.Expr
+module Stmt = Ast.Stmt
+let instantiate = Constraint.instantiate
+let unify = Constraint.unify
 
 type binding =
     | Let of Type.gen * Type.t
@@ -15,7 +17,7 @@ module Env = struct
 end
 
 let constrain stmts =
-    let constr = C.create () in
+    let constr = Constraint.create () in
 
     let const_type : Const.t -> Prim.t = function
         | String _ -> String
@@ -29,12 +31,12 @@ let constrain stmts =
         | Var (_, name) -> (match Env.get_exn name env with (* FIXME: can raise *)
             | Let (vgen, vt) ->
                 let t = Type.uv gen in
-                Constraint.instantiate constr vgen vt t;
+                instantiate constr vgen vt t;
                 t
 
             | Param vt ->
                 let t = Type.uv gen in
-                Constraint.unify constr vt t;
+                unify constr vt t;
                 t)
 
         | Fn (_, (_, name, (* FIXME: use ann: *) _), body) ->
