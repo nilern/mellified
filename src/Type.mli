@@ -7,7 +7,7 @@ type gen =
 and t = private
     | Arrow of {mutable binder : binder; domain : t; codomain : t}
     | Uv of {mutable binder : binder; mutable v : t option}
-    | Prim of Prim.t
+    | Prim of {mutable binder : binder; p : Prim.t}
 
 and binder =
     | Gen of flag * gen
@@ -17,7 +17,7 @@ val level : gen -> gen
 
 val uv : gen -> t
 val arrow : gen -> t -> t -> t
-val prim : Prim.t -> t
+val prim : gen -> Prim.t -> t
 
 val to_doc : t -> PPrint.document
 

@@ -67,7 +67,7 @@ let constrain stmts =
             codomain
 
         | Const (_, c) ->
-            let t = Type.prim (const_type c) in
+            let t = Type.prim gen (const_type c) in
             t
 
     and constrain_stmt (gen, env) : Stmt.t -> Type.gen * Env.t = function

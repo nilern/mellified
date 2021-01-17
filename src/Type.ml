@@ -10,7 +10,7 @@ type gen =
 and t =
     | Arrow of {mutable binder : binder; domain : t; codomain : t}
     | Uv of {mutable binder : binder; mutable v : t option}
-    | Prim of Prim.t
+    | Prim of {mutable binder : binder; p : Prim.t}
 
 and binder =
     | Gen of flag * gen
@@ -20,16 +20,15 @@ let level parent = Local parent
 
 let uv gen = Uv {binder = Gen (Flex, gen); v = None}
 let arrow gen domain codomain = Arrow {binder = Gen (Flex, gen); domain; codomain}
-let prim p = Prim p
+let prim gen p = Prim {binder = Gen (Flex, gen); p}
 
 let binder = function
-    | Arrow {binder; _} | Uv {binder; _} -> Some binder
-    | Prim _ -> None
+    | Arrow {binder; _} | Uv {binder; _} | Prim {binder; _} -> binder
 
 let bind (t : t) binder = match t with
     | Arrow arrow -> arrow.binder <- binder
     | Uv uv -> uv.binder <- binder
-    | Prim _ -> ()
+    | Prim prim -> prim.binder <- binder
 
 let flag = function
     | Gen (flag, _) | Typ (flag, _) -> flag
@@ -73,7 +72,7 @@ let of_syn gen syn =
                 bind codomain (Typ (Flex, t));
                 t
             | Wild _ -> Uv {binder; v = None}
-            | Prim (_, p) -> Prim p in
+            | Prim (_, p) -> Prim {binder; p} in
         t in
 
     let t = of' Env.empty (Gen (Flex, gen)) syn in
@@ -82,11 +81,11 @@ let of_syn gen syn =
 let analyze t =
     let bindees = Hashtbl.create 0 in
     let add_bindee (t : t) = match binder t with
-        | Some (Typ (_, binder)) ->
+        | Typ (_, binder) ->
             Hashtbl.update bindees ~k: binder ~f: (fun _ -> function
                 | Some ts -> Some (t :: ts)
                 | None -> Some [t])
-        | Some (Gen _) | None -> () in
+        | Gen _ -> () in
 
     let inlineabilities = Hashtbl.create 0 in
     let add_inlineability t b' =
@@ -110,9 +109,7 @@ let analyze t =
                 | Some term -> analyze parent term
                 | None -> add_bindee t);
             | Prim _ -> ());
-            (match binder t with
-            | Some binder -> binder_eq binder parent
-            | None -> true)
+            binder_eq (binder t) parent
             |> add_inlineability t
         end in
 
@@ -136,7 +133,7 @@ let to_syn span t =
             then acc
             else begin
                 let bound = to_syn bindee in
-                let flag = bindee |> binder |> Option.get |> flag in
+                let flag = bindee |> binder |> flag in
                 let name = fresh_qname bindee in
                 (name, flag, bound) :: acc
             end
@@ -147,7 +144,7 @@ let to_syn span t =
             | Uv {binder = _; v} -> (match v with
                 | Some t -> to_syn t
                 | None -> Hashtbl.get vne t |> Option.value ~default: (Ast.Type.Wild span))
-            | Prim p -> Prim (span, p) in
+            | Prim {binder = _; p} -> Prim (span, p) in
         List.fold_left (fun body (name, flag, bound) -> (* fold_left reverses, intentionally *)
             Ast.Type.ForAll (span, name, flag, bound, body)
         ) body bindees
@@ -167,20 +164,17 @@ let to_doc =
 let expand unify gen t dest =
     let dest =
         let rec loop t = match binder t with
-            | Some (Gen (_, dest)) -> dest
-            | Some (Typ (_, t)) -> loop t
-            | None -> Top in
+            | Gen (_, dest) -> dest
+            | Typ (_, t) -> loop t in
         loop dest in
 
     let copies = Hashtbl.create 0 in
 
     let rec locally_bound t = match binder t with
-        | Some (Gen (_, gen')) -> gen == gen'
-        | Some (Typ (_, t')) -> locally_bound t'
-        | None -> false in
+        | Gen (_, gen') -> gen == gen'
+        | Typ (_, t') -> locally_bound t' in
 
     let rec expand_term t = match t with
-        | Prim _ as t -> t
 
         | Uv {binder; v} -> (match v with
             | Some t -> expand_term t
@@ -199,7 +193,12 @@ let expand unify gen t dest =
             Hashtbl.add copies t t';
             t'
 
-        | Arrow _ ->
+        | Prim {binder; p} when locally_bound t ->
+            let t' = Prim {binder; p} in
+            Hashtbl.add copies t t';
+            t'
+
+        | Arrow _ | Prim _ ->
             let t' = Uv {binder = Gen (Flex, dest); v = None} in
             unify t t';
             t' in
@@ -210,9 +209,9 @@ let expand unify gen t dest =
         if t == root
         then bind t (Gen (Flex, dest))
         else (match binder t with
-            | Some (Typ (flag, t)) -> bind t (Typ (flag, Hashtbl.find copies t))
-            | Some (Gen (flag, gen')) when gen' == gen -> bind t (Typ (flag, root))
-            | Some (Gen _) | None -> ());
+            | Typ (flag, t) -> bind t (Typ (flag, Hashtbl.find copies t))
+            | Gen (flag, gen') when gen' == gen -> bind t (Typ (flag, root))
+            | Gen _ -> ());
 
         match t with
         | Arrow {binder = _; domain; codomain} ->
@@ -262,8 +261,8 @@ let unify_terms span t t' =
 
             | _ -> failwith ("incompatible type shapes at " ^ Util.span_to_string span))
 
-        | (Prim p, _) -> (match t' with
-            | Prim p' ->
+        | (Prim {binder = _; p}, _) -> (match t' with
+            | Prim {binder = _; p = p'} ->
                 if Prim.eq p p'
                 then ()
                 else failwith ("incompatible type shapes at " ^ Util.span_to_string span)
@@ -306,9 +305,7 @@ let rebind _ t (pg_parents, mergeds) =
             let rec anc bs b =
                 let bs = b :: bs in
                 match b with
-                | Typ (_, t) -> (match binder t with
-                    | Some binder -> anc bs binder
-                    | None -> [Gen (Flex, Top)])
+                | Typ (_, t) -> anc bs (binder t)
                 | Gen (_, Local parent) -> anc bs (Gen (Flex, parent))
                 | Gen (_, Top) -> bs in
             anc [] t in
@@ -322,7 +319,7 @@ let rebind _ t (pg_parents, mergeds) =
         let mergeds = Hashtbl.get mergeds t |> Option.value ~default: [] in
         let ts = t :: mergeds in
         let binders = Stream.from (Source.list ts)
-            |> Stream.flat_map (binder %> CCOpt.map_or ~default: Stream.empty Stream.single)
+            |> Stream.flat_map (binder %> Stream.single)
             |> Stream.into Sink.list in
 
         let flag = Stream.from (Source.list binders)
