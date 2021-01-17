@@ -16,7 +16,8 @@ let rec repl () =
                 |> SedlexMenhir.create_lexbuf "REPL input" in
             let stmts = SedlexMenhir.sedlex_with_menhir Lexer.token Parser.stmts lexbuf in
             Vec.iter (Util.pprint % Ast.Stmt.to_doc) stmts;
-            let _ = Constrain.constrain stmts in
+            Constrain.constrain stmts
+            |> Solver.solve;
             ()
         end with SedlexMenhir.ParseError err ->
             print_endline @@ SedlexMenhir.string_of_ParseError err);

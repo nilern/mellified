@@ -164,6 +164,59 @@ let to_doc =
     let shim_span = (shim_pos, shim_pos) in
     fun t -> Ast.Type.to_doc (to_syn shim_span t)
 
+let expand gen t dest unify =
+    let copies = Hashtbl.create 0 in
+
+    let rec locally_bound t = match binder t with
+        | Some (Gen (_, gen')) -> gen == gen'
+        | Some (Typ (_, t')) -> locally_bound t'
+        | None -> false in
+
+    let binder' binder = match binder with
+        | Gen (flag, gen') when gen' == gen -> Gen (flag, dest)
+        | _ -> binder in
+
+    let rec expand_term t = match t with
+        | Prim _ as t -> t
+
+        | Uv {binder; v} -> (match v with
+            | Some t -> expand_term t
+            | None when locally_bound t ->
+                let t' = Uv {binder = binder' binder; v = None} in
+                Hashtbl.add copies t t';
+                t'
+            | None ->
+                let t' = Uv {binder = Gen (Flex, dest); v = None} in
+                unify t t';
+                t')
+
+        | Arrow {binder; domain; codomain} when locally_bound t ->
+            let t' = Arrow {binder = binder' binder
+                ; domain = expand_term domain; codomain = expand_term codomain} in
+            Hashtbl.add copies t t';
+            t'
+
+        | Arrow _ ->
+            let t' = Uv {binder = Gen (Flex, dest); v = None} in
+            unify t t';
+            t' in
+
+    let rec rebind_expansion t =
+        (match binder t with
+        | Some (Typ (flag, t)) -> bind t (Typ (flag, Hashtbl.find copies t))
+        | Some (Gen _) | None -> ());
+
+        match t with
+        | Arrow {binder = _; domain; codomain} ->
+            rebind_expansion domain;
+            rebind_expansion codomain
+        | Uv {binder = _; v = None} | Prim _ -> ()
+        | Uv {binder = _; v = Some _} -> failwith "unreachable" in
+
+    let t = expand_term t in
+    rebind_expansion t;
+    bind t (Gen (Flex, dest))
+
 let unify_terms span t t' =
     let mergeds = Hashtbl.create 0 in
     let pg_parents = Hashtbl.create 0 in
@@ -241,7 +294,7 @@ let unify_terms span t t' =
  *)
 (* FIXME: Check permissions: *)
 let rebind _ t (pg_parents, mergeds) =
-    let lca =
+    let lca = (* OPTIMIZE *)
         let ancestors t =
             let rec anc bs b =
                 let bs = b :: bs in
