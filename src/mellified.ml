@@ -17,7 +17,7 @@ let rec repl top =
             let stmts = SedlexMenhir.sedlex_with_menhir Lexer.token Parser.stmts lexbuf in
             Vec.iter (Util.pprint % Ast.Stmt.to_doc) stmts;
             Constrain.constrain stmts
-            |> Solver.solve ~top
+            |> Solver.solve
         end with SedlexMenhir.ParseError err ->
             print_endline @@ SedlexMenhir.string_of_ParseError err);
         repl top
