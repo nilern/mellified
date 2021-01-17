@@ -164,7 +164,14 @@ let to_doc =
     let shim_span = (shim_pos, shim_pos) in
     fun t -> Ast.Type.to_doc (to_syn shim_span t)
 
-let expand gen t dest unify =
+let expand ~top gen t dest unify =
+    let dest =
+        let rec loop t = match binder t with
+            | Some (Gen (_, dest)) -> dest
+            | Some (Typ (_, t)) -> loop t
+            | None -> top in
+        loop dest in
+
     let copies = Hashtbl.create 0 in
 
     let rec locally_bound t = match binder t with
@@ -215,7 +222,8 @@ let expand gen t dest unify =
 
     let t = expand_term t in
     rebind_expansion t;
-    bind t (Gen (Flex, dest))
+    bind t (Gen (Flex, dest));
+    t
 
 let unify_terms span t t' =
     let mergeds = Hashtbl.create 0 in

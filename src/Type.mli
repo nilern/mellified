@@ -24,6 +24,6 @@ val to_doc : t -> PPrint.document
 val of_syn : gen -> Ast.Type.t -> t
 val to_syn : Util.span -> t -> Ast.Type.t
 
-val expand : gen -> t -> gen -> (t -> t -> unit) -> unit
+val expand : top: gen -> gen -> t -> t -> (t -> t -> unit) -> t
 val unify : Util.span -> t -> t -> unit
 
