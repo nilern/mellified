@@ -179,17 +179,13 @@ let expand ~top gen t dest unify =
         | Some (Typ (_, t')) -> locally_bound t'
         | None -> false in
 
-    let binder' binder = match binder with
-        | Gen (flag, gen') when gen' == gen -> Gen (flag, dest)
-        | _ -> binder in
-
     let rec expand_term t = match t with
         | Prim _ as t -> t
 
         | Uv {binder; v} -> (match v with
             | Some t -> expand_term t
             | None when locally_bound t ->
-                let t' = Uv {binder = binder' binder; v = None} in
+                let t' = Uv {binder; v = None} in
                 Hashtbl.add copies t t';
                 t'
             | None ->
@@ -198,7 +194,7 @@ let expand ~top gen t dest unify =
                 t')
 
         | Arrow {binder; domain; codomain} when locally_bound t ->
-            let t' = Arrow {binder = binder' binder
+            let t' = Arrow {binder
                 ; domain = expand_term domain; codomain = expand_term codomain} in
             Hashtbl.add copies t t';
             t'
@@ -208,10 +204,15 @@ let expand ~top gen t dest unify =
             unify t t';
             t' in
 
+    let root = expand_term t in
+
     let rec rebind_expansion t =
-        (match binder t with
-        | Some (Typ (flag, t)) -> bind t (Typ (flag, Hashtbl.find copies t))
-        | Some (Gen _) | None -> ());
+        if t == root
+        then bind t (Gen (Flex, dest))
+        else (match binder t with
+            | Some (Typ (flag, t)) -> bind t (Typ (flag, Hashtbl.find copies t))
+            | Some (Gen (flag, gen')) when gen' == gen -> bind t (Typ (flag, root))
+            | Some (Gen _) | None -> ());
 
         match t with
         | Arrow {binder = _; domain; codomain} ->
@@ -220,10 +221,8 @@ let expand ~top gen t dest unify =
         | Uv {binder = _; v = None} | Prim _ -> ()
         | Uv {binder = _; v = Some _} -> failwith "unreachable" in
 
-    let t = expand_term t in
-    rebind_expansion t;
-    bind t (Gen (Flex, dest));
-    t
+    rebind_expansion root;
+    root
 
 let unify_terms span t t' =
     let mergeds = Hashtbl.create 0 in
