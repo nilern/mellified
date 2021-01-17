@@ -1,3 +1,6 @@
+open Streaming
+let (%>) = CCFun.(%>)
+
 type flag = IRUtil.flag
 
 type gen =
@@ -160,4 +163,130 @@ let to_doc =
     let shim_pos = Util.start_pos "" in
     let shim_span = (shim_pos, shim_pos) in
     fun t -> Ast.Type.to_doc (to_syn shim_span t)
+
+let unify_terms span t t' =
+    let mergeds = Hashtbl.create 0 in
+    let pg_parents = Hashtbl.create 0 in
+
+    let occurs uvt = (* NOTE: also adds to `pgrafteds` if relevant *)
+        let rec occ parent t =
+            (match parent with
+            | Some parent -> Hashtbl.add pg_parents t parent
+            | None -> ());
+
+            match t with
+            | Uv {binder = _; v} as t -> (match v with
+                | Some t' -> occ (Some t) t'
+                | None -> t == uvt)
+            | Arrow {binder = _; domain; codomain} ->
+                let parent = Some t in
+                occ parent domain || occ parent codomain
+            | Prim _ -> false in
+        occ None in
+
+    let rec uni t t' =
+        Hashtbl.update mergeds ~k: t ~f: (fun _ -> function
+            | Some ts -> Some (t' :: ts)
+            | None -> Some [t']);
+
+        match (t, t') with
+        | (Uv ({binder = _; v = None} as uv) as uvt, t) | (t, (Uv ({binder = _; v = None} as uv) as uvt)) ->
+            if occurs uvt t
+            then failwith ("occurs check at " ^ Util.span_to_string span)
+            else uv.v <- Some t
+
+        | (Arrow {binder = _; domain; codomain}, _) -> (match t' with
+            | Arrow {binder = _; domain = domain'; codomain = codomain'} ->
+                uni domain domain';
+                uni codomain codomain'
+
+            | _ -> failwith ("incompatible type shapes at " ^ Util.span_to_string span))
+
+        | (Prim p, _) -> (match t' with
+            | Prim p' ->
+                if Prim.eq p p'
+                then ()
+                else failwith ("incompatible type shapes at " ^ Util.span_to_string span)
+
+            | _ -> failwith ("incompatible type shapes at " ^ Util.span_to_string span))
+
+        | _ -> failwith ("incompatible type shapes at " ^ Util.span_to_string span) in
+    uni t t';
+
+    (pg_parents, mergeds)
+
+(* Yakobowski thesis fig. 7.3.2:
+ *
+ * A node is *partially grafted* when some ancestor of it was assigned to a uv
+ * by unify_terms.
+ *
+ * 1. Building the binding tree:
+ *     Visit nodes in pre-order (w.r.t. children of course).
+ *     For each node:
+ *
+ *         a. let mergeds = the set of nodes merged into `node` by unify_terms.
+ *         b. let flag = Rigid if it exists in `mergeds`, else Flex
+ *         c. let binders = the `binder`s of `mergeds`
+ *            let pg_parents =
+ *                 {the structural parents of `node`} if `node` is partially grafted
+ *                 {} otherwise
+ *         d. node.binder <- Gen/Typ (flag, LCA (binders U pg_parents))
+ * 2. Checking permissions:
+ *     Fail if:
+ *     
+ *         a. A non-green uv was grafted to
+ *         b. A red node was raised
+ *         c. A red node was weakened
+ *         d. A red node was merged with another node with the same binder
+ *)
+(* FIXME: Check permissions: *)
+let rebind _ t (pg_parents, mergeds) =
+    let lca =
+        let ancestors t =
+            let rec anc bs b =
+                let bs = b :: bs in
+                match b with
+                | Typ (_, t) -> (match binder t with
+                    | Some binder -> anc bs binder
+                    | None -> [Gen (Flex, Top)])
+                | Gen (_, Local parent) -> anc bs (Gen (Flex, parent))
+                | Gen (_, Top) -> bs in
+            anc [] t in
+        fun b b' -> Stream.from
+                (Source.zip (Source.list (ancestors b)) (Source.list (ancestors b')))
+            |> Stream.filter (fun (b, b') -> binder_eq b b')
+            |> Stream.into Sink.last
+            |> Option.get |> fst in
+
+    let rec rebind t =
+        let mergeds = Hashtbl.get mergeds t |> Option.value ~default: [] in
+        let ts = t :: mergeds in
+        let binders = Stream.from (Source.list ts)
+            |> Stream.flat_map (binder %> CCOpt.map_or ~default: Stream.empty Stream.single)
+            |> Stream.into Sink.list in
+
+        let flag = Stream.from (Source.list binders)
+            |> Stream.map flag
+            |> Stream.into (Sink.fold IRUtil.flag_max Flex) in
+
+        let pg_parents = Stream.from (Source.list ts)
+            |> Stream.flat_map (fun t -> match Hashtbl.get pg_parents t with
+                | Some parent -> Stream.single (Typ (Flex, parent))
+                | None -> Stream.empty)
+            |> Stream.into Sink.list in
+        (match List.append binders pg_parents with
+        | b :: bs ->
+            let binder = match List.fold_left lca b bs with
+                | Gen (_, gen) -> Gen (flag, gen)
+                | Typ (_, t) -> Typ (flag, t) in
+            ts |> List.iter (fun t -> bind t binder)
+        | [] -> ());
+
+        match t with
+        | Arrow {binder = _; domain; codomain} -> rebind domain; rebind codomain
+        | Uv {binder = _; v} -> Option.iter rebind v
+        | Prim _ -> () in
+    rebind t
+
+let unify span t t' = unify_terms span t t' |> rebind span t
 

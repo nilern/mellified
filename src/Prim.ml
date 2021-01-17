@@ -11,3 +11,5 @@ let to_string = function
 
 let to_doc p = PPrint.string (to_string p)
 
+let eq = (=)
+
