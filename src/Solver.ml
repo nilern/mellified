@@ -1,9 +1,4 @@
-let solve (constr : Constraint.t) =
-    let unifs = Queue.create () in
-    constr.unifs |> CCVector.iter (Fun.flip Queue.add unifs);
-    let instas = Queue.create () in
-    constr.instas |> CCVector.iter (Fun.flip Queue.add instas);
-
+let solve ({Constraint.instas; unifs} as constr) =
     let rec solve () =
         match Queue.take_opt unifs with
         | Some (span, t, t') ->
@@ -12,9 +7,8 @@ let solve (constr : Constraint.t) =
         | None ->
             (match Queue.take_opt instas with
             | Some (span, gen, t, t') ->
-                let unify t t' = Queue.add (span, t, t') unifs in
-                let t = Type.expand unify gen t t' in
-                unify t t';
+                let t = Type.expand (Constraint.unify constr span) gen t t' in
+                Constraint.unify constr span t t';
                 solve ()
             | None -> ()) in
     solve ()
