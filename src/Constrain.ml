@@ -9,12 +9,7 @@ type binding =
     | Let of Type.gen * Type.t
     | Param of Type.t
 
-module Env = struct
-    include Name.HashMap
-
-    type env = binding t
-    type t = env
-end
+module Env = Name.HashMap
 
 let constrain stmts =
     let constr = Constraint.create () in
@@ -25,7 +20,7 @@ let constrain stmts =
 
     let rec typeof gen env : Expr.t -> Type.t = function
         | Let (_, stmts, body) ->
-            let (gen, env) = Vec.fold constrain_stmt (gen, env) stmts in
+                let (_, gen, env) = Vec.fold constrain_stmt ([], gen, env) stmts in
             typeof gen env body
 
         | Var (span, name) -> (match Env.get_exn name env with (* FIXME: can raise *)
@@ -70,18 +65,18 @@ let constrain stmts =
             let t = Type.prim gen (const_type c) in
             t
 
-    and constrain_stmt (gen, env) : Stmt.t -> Type.gen * Env.t = function
+    and constrain_stmt (ts, gen, env) = function
         | Val (_, (_, name, (* FIXME: use ann: *) _), expr) ->
             let gen = Type.level gen in
             let t = typeof gen env expr in
-            (gen, Env.add name (Let (gen, t)) env)
+            ((Some name, t) :: ts, gen, Env.add name (Let (gen, t)) env)
 
         | Do (_, expr) ->
             let gen = Type.level gen in
-            ignore (typeof gen env expr);
-            (gen, env) in
+            let t =  typeof gen env expr in
+            ((None, t) :: ts, gen, env) in
 
     let gen : Type.gen = Top in
-    let _ = Vec.fold constrain_stmt (gen, Env.empty) stmts in
-    constr
+    let (nts, _, _) = Vec.fold constrain_stmt ([], gen, Env.empty) stmts in
+    (constr, List.rev nts)
 
