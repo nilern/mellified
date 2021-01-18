@@ -117,7 +117,7 @@ let analyze t =
     analyze (Gen (Flex, tmp)) t;
     (bindees, inlineabilities)
 
-let to_syn span t = 
+let to_syn ctx span t = 
     let (bindees, inlineabilities) = analyze t in
 
     let vne = Hashtbl.create 0 in
@@ -126,7 +126,14 @@ let to_syn span t =
         Hashtbl.add vne t (Ast.Type.Var (span, name));
         name in
 
-    let rec to_syn t =
+    let rec contextualize t = match Hashtbl.get ctx t with
+        | Some (name, _) -> name
+        | None ->
+            let name = Name.fresh () in
+            Hashtbl.add ctx t (name, to_syn t);
+            name
+
+    and to_syn t =
         let bindees = Hashtbl.get bindees t |> Option.value ~default: [] in
         let bindees = List.fold_right (fun bindee acc ->
             if Hashtbl.find inlineabilities bindee
@@ -154,16 +161,23 @@ let to_syn span t =
         then to_syn t
         else match Hashtbl.get vne t with
             | Some syn -> syn
-            | None -> (* HACK: Free / bound to a gen node: *)
-                ignore (fresh_qname t);
-                Hashtbl.find vne t in (* TODO: Print bound somewhere too. *)
+            | None -> Var (span, contextualize t) in
 
     to_syn t
 
-let to_doc =
+let to_doc t =
     let shim_pos = Util.start_pos "" in
     let shim_span = (shim_pos, shim_pos) in
-    fun t -> Ast.Type.to_doc (to_syn shim_span t)
+    let ctx = Hashtbl.create 0 in
+    let syn = to_syn ctx shim_span t in
+    PPrint.(match Hashtbl.to_list ctx with
+        | (_ :: _) as ctx ->
+            infix 4 1 (string "in") (Ast.Type.to_doc syn)
+                (separate_map (comma ^^ blank 1) (fun (t, (name, syn)) ->
+                    infix 4 1 (string (IRUtil.flag_to_string (t |> binder |> flag)))
+                        (Name.to_doc name) (Ast.Type.to_doc syn)
+                ) ctx)
+        | [] -> Ast.Type.to_doc syn)
 
 let expand unify gen t dest =
     let dest =
