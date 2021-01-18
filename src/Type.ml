@@ -152,7 +152,11 @@ let to_syn span t =
     and child_to_syn t =
         if Hashtbl.find inlineabilities t
         then to_syn t
-        else Hashtbl.find vne t in
+        else match Hashtbl.get vne t with
+            | Some syn -> syn
+            | None -> (* HACK: Free / bound to a gen node: *)
+                ignore (fresh_qname t);
+                Hashtbl.find vne t in (* TODO: Print bound somewhere too. *)
 
     to_syn t
 
