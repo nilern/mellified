@@ -108,7 +108,7 @@ let analyze t =
             | Uv {binder = _; v} -> (match v with
                 | Some term -> analyze parent term
                 | None -> add_bindee t);
-            | Prim _ -> ());
+            | Prim _ -> add_bindee t);
             binder_eq (binder t) parent
             |> add_inlineability t
         end in
